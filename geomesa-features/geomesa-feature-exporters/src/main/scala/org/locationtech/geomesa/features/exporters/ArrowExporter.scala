@@ -29,7 +29,6 @@ class ArrowExporter(out: OutputStream, hints: Hints) extends FeatureExporter {
   private lazy val ipc = hints.getArrowFormatVersion.getOrElse(FormatVersion.ArrowFormatVersion.get)
   private lazy val batchSize = hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
   private lazy val dictionaryFields = hints.getArrowDictionaryFields
-  private lazy val flattenFields = hints.isArrowFlatten
 
   private var delegate: FeatureExporter = _
 
@@ -38,12 +37,12 @@ class ArrowExporter(out: OutputStream, hints: Hints) extends FeatureExporter {
       new EncodedDelegate(out)
     } else if (dictionaryFields.isEmpty) {
       // note: features should be sorted already, even if arrow encoding wasn't performed
-      new BatchDelegate(out, encoding, FormatVersion.options(ipc), sort, batchSize, Map.empty, flattenFields)
+      new BatchDelegate(out, encoding, FormatVersion.options(ipc), sort, batchSize, Map.empty)
     } else {
       if (sort.isDefined) {
         throw new NotImplementedError("Sorting and calculating dictionaries at the same time is not supported")
       }
-      new DictionaryDelegate(out, dictionaryFields, encoding, FormatVersion.options(ipc), batchSize, flattenFields)
+      new DictionaryDelegate(out, dictionaryFields, encoding, FormatVersion.options(ipc), batchSize)
     }
     delegate.start(sft)
   }
@@ -73,15 +72,14 @@ object ArrowExporter {
       dictionaryFields: Seq[String],
       encoding: SimpleFeatureEncoding,
       ipcOpts: IpcOption,
-      batchSize: Int,
-      flattenStruct: Boolean = false
+      batchSize: Int
     ) extends FeatureExporter {
 
     private var writer: DictionaryBuildingWriter = _
     private var count = 0L
 
     override def start(sft: SimpleFeatureType): Unit = {
-      writer = new DictionaryBuildingWriter(sft, dictionaryFields, encoding, ipcOpts, flattenStruct = flattenStruct)
+      writer = new DictionaryBuildingWriter(sft, dictionaryFields, encoding, ipcOpts)
     }
 
     override def export(features: Iterator[SimpleFeature]): Option[Long] = {
@@ -114,15 +112,14 @@ object ArrowExporter {
       ipcOpts: IpcOption,
       sort: Option[(String, Boolean)],
       batchSize: Int,
-      dictionaries: Map[String, ArrowDictionary],
-      flattenStruct: Boolean = false
+      dictionaries: Map[String, ArrowDictionary]
     ) extends FeatureExporter {
 
     private var writer: SimpleFeatureArrowFileWriter = _
     private var count = 0L
 
     override def start(sft: SimpleFeatureType): Unit = {
-      writer = SimpleFeatureArrowFileWriter(os, sft, dictionaries, encoding, ipcOpts, sort, flattenStruct = flattenStruct)
+      writer = SimpleFeatureArrowFileWriter(os, sft, dictionaries, encoding, ipcOpts, sort)
     }
 
     override def export(features: Iterator[SimpleFeature]): Option[Long] = {

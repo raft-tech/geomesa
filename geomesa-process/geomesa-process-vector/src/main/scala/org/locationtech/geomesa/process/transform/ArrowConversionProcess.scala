@@ -65,9 +65,7 @@ class ArrowConversionProcess extends GeoMesaProcess with LazyLogging {
               @DescribeParameter(name = "sortReverse", description = "Reverse the default sort order", min = 0)
               sortReverse: java.lang.Boolean,
               @DescribeParameter(name = "batchSize", description = "Number of features to include in each record batch", min = 0)
-              batchSize: java.lang.Integer,
-              @DescribeParameter(name = "flattenStruct", description = "Removes the outer SFT struct yielding top level feature access", min = 0)
-              flattenStruct: java.lang.Boolean
+              batchSize: java.lang.Integer
              ): java.util.Iterator[Array[Byte]] = {
 
     import scala.collection.JavaConverters._
@@ -90,7 +88,7 @@ class ArrowConversionProcess extends GeoMesaProcess with LazyLogging {
     val batch = Option(batchSize).map(_.intValue).getOrElse(ArrowProperties.BatchSize.get.toInt)
 
     val visitor =
-      new ArrowVisitor(sft, encoding, ipcVersion, toEncode, Option(sortField), reverse, false, batch, flattenStruct)
+      new ArrowVisitor(sft, encoding, ipcVersion, toEncode, Option(sortField), reverse, false, batch)
     GeoMesaFeatureCollection.visit(features, visitor)
     visitor.getResult.results
   }
@@ -106,8 +104,7 @@ object ArrowConversionProcess {
       sortField: Option[String],
       sortReverse: Option[Boolean],
       preSorted: Boolean,
-      batchSize: Int,
-      flattenStruct: Boolean
+      batchSize: Int
     ) extends GeoMesaProcessVisitor with LazyLogging {
 
     import scala.collection.JavaConverters._
@@ -117,9 +114,9 @@ object ArrowConversionProcess {
       val sort = sortField.map(s => (s, sortReverse.getOrElse(false)))
       val ipcOpts = FormatVersion.options(ipcVersion)
       if (dictionaryFields.isEmpty && (sortField.isEmpty || preSorted)) {
-        new SimpleArrowManualVisitor(sft, encoding, ipcOpts, sort, batchSize, flattenStruct)
+        new SimpleArrowManualVisitor(sft, encoding, ipcOpts, sort, batchSize)
       } else {
-        new ComplexArrowManualVisitor(sft, encoding, ipcOpts, dictionaryFields, sort, preSorted, batchSize, flattenStruct)
+        new ComplexArrowManualVisitor(sft, encoding, ipcOpts, dictionaryFields, sort, preSorted, batchSize)
       }
     }
 
@@ -151,7 +148,6 @@ object ArrowConversionProcess {
       query.getHints.put(QueryHints.ARROW_PROXY_FID, encoding.fids.contains(Encoding.Min))
       query.getHints.put(QueryHints.ARROW_BATCH_SIZE, batchSize)
       query.getHints.put(QueryHints.ARROW_FORMAT_VERSION, ipcVersion)
-      query.getHints.put(QueryHints.ARROW_FLATTEN_STRUCT, flattenStruct)
       sortField.foreach(query.getHints.put(QueryHints.ARROW_SORT_FIELD, _))
       sortReverse.foreach(query.getHints.put(QueryHints.ARROW_SORT_REVERSE, _))
 
@@ -178,8 +174,7 @@ object ArrowConversionProcess {
       encoding: SimpleFeatureEncoding,
       ipcOpts: IpcOption,
       sort: Option[(String, Boolean)],
-      batchSize: Int,
-      flattenStruct: Boolean
+      batchSize: Int
     ) extends ArrowManualVisitor {
 
     private val out = new ByteArrayOutputStream()
@@ -187,7 +182,7 @@ object ArrowConversionProcess {
     private var count = 0L
 
     private val writer =
-      SimpleFeatureArrowFileWriter(out, sft, Map.empty[String, ArrowDictionary], encoding, ipcOpts, sort, flattenStruct)
+      SimpleFeatureArrowFileWriter(out, sft, Map.empty[String, ArrowDictionary], encoding, ipcOpts, sort)
 
     override def visit(feature: SimpleFeature): Unit = {
       writer.add(feature)
@@ -222,8 +217,7 @@ object ArrowConversionProcess {
       dictionaryFields: Seq[String],
       sort: Option[(String, Boolean)],
       preSorted: Boolean,
-      batchSize: Int,
-      flattenStruct: Boolean
+      batchSize: Int
     ) extends ArrowManualVisitor {
 
     private val features = ArrayBuffer.empty[SimpleFeature]
@@ -262,7 +256,7 @@ object ArrowConversionProcess {
       val out = new ByteArrayOutputStream()
       val bytes = ListBuffer.empty[Array[Byte]]
 
-      WithClose(SimpleFeatureArrowFileWriter(out, sft, dictionaries, encoding, ipcOpts, sort, flattenStruct)) { writer =>
+      WithClose(SimpleFeatureArrowFileWriter(out, sft, dictionaries, encoding, ipcOpts, sort)) { writer =>
         while (sorted.hasNext) { // send batches
           var i = 0
           while (i < batchSize && sorted.hasNext) {
