@@ -29,3 +29,4 @@ geomesa-*.*.*-*
 .vscode/settings.json
 venv/**
 metastore_db/**
+*versionsBackup
