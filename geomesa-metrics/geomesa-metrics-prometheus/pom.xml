@@ -3,12 +3,12 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-metrics_2.12</artifactId>
+        <artifactId>geomesa-metrics_2.13</artifactId>
         <version>5.3.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-metrics-prometheus_2.12</artifactId>
+    <artifactId>geomesa-metrics-prometheus_2.13</artifactId>
     <name>GeoMesa Metrics Prometheus Reporter</name>
 
     <dependencies>
