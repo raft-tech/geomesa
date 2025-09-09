@@ -182,26 +182,30 @@ object KafkaCacheLoader extends LazyLogging {
               val end = consumer.position(tp)
               logger.debug(s"Setting max offset to [${tp.topic}:${tp.partition}:${end - 1}]")
               offsets.put(tp.partition(), end - 1)
-              if (!readBack.isFinite) {
-                KafkaConsumerVersions.seekToBeginning(consumer, tp)
-              } else {
-                val offset = Try {
-                  val time = System.currentTimeMillis() - readBack.toMillis
-                  KafkaConsumerVersions.offsetsForTimes(consumer, tp.topic, Seq(tp.partition), time).get(tp.partition)
-                }
-                offset match {
-                  case Success(Some(o)) =>
-                    logger.debug(s"Seeking to offset $o for read-back $readBack on [${tp.topic}:${tp.partition}]")
-                    consumer.seek(tp, o)
+              try {
+                if (!readBack.isFinite) {
+                  KafkaConsumerVersions.seekToBeginning(consumer, tp)
+                } else {
+                  val offset = Try {
+                    val time = System.currentTimeMillis() - readBack.toMillis
+                    KafkaConsumerVersions.offsetsForTimes(consumer, tp.topic, Seq(tp.partition), time).get(tp.partition)
+                  }
+                  offset match {
+                    case Success(Some(o)) =>
+                      logger.debug(s"Seeking to offset $o for read-back $readBack on [${tp.topic}:${tp.partition}]")
+                      consumer.seek(tp, o)
 
-                  case Success(None) =>
-                    logger.debug(s"No prior offset found for read-back $readBack on [${tp.topic}:${tp.partition}], " +
-                      "reading from head of queue")
+                    case Success(None) =>
+                      logger.debug(s"No prior offset found for read-back $readBack on [${tp.topic}:${tp.partition}], " +
+                        "reading from head of queue")
 
-                  case Failure(e) =>
-                    logger.warn(s"Error finding initial offset: [${tp.topic}:${tp.partition}], seeking to beginning", e)
-                    KafkaConsumerVersions.seekToBeginning(consumer, tp)
+                    case Failure(e) =>
+                      logger.warn(s"Error finding initial offset: [${tp.topic}:${tp.partition}], seeking to beginning", e)
+                      KafkaConsumerVersions.seekToBeginning(consumer, tp)
+                  }
                 }
+              } finally {
+                checkComplete(consumer, tp)
               }
             } finally {
               KafkaConsumerVersions.resume(consumer, tp)
@@ -279,6 +283,23 @@ object KafkaCacheLoader extends LazyLogging {
     }
 
     /**
+     * Checks the current position of the consumer, and notifies through the countdown latch when the initial load
+     * is complete
+     *
+     * @param consumer consumer
+     * @param tp topic and partition to check
+     */
+    private def checkComplete(consumer: Consumer[Array[Byte], Array[Byte]], tp: TopicPartition): Unit = {
+      val position = consumer.position(tp)
+      // once we've hit the max offset for the partition, remove from the offset map so we don't double count it
+      if (position > offsets.getOrDefault(tp.partition(), Long.MaxValue)) {
+        offsets.remove(tp.partition)
+        latch.countDown()
+        logger.info(s"Initial load completed for [$topic:${tp.partition}], ${latch.getCount} partitions remaining")
+      }
+    }
+
+    /**
      * Consumer runnable that tracks when we have completed the initial load
      *
      * @param id id
@@ -289,19 +310,8 @@ object KafkaCacheLoader extends LazyLogging {
         extends ConsumerRunnable(id, consumer, handler) {
 
       override protected def processPoll(result: ConsumerRecords[Array[Byte], Array[Byte]]): Unit = {
-        try {
-          super.processPoll(result)
-        } finally {
-          result.partitions().asScala.foreach { tp =>
-            val position = consumer.position(tp)
-            // once we've hit the max offset for the partition, remove from the offset map so we don't double count it
-            if (position >= offsets.getOrDefault(tp.partition(), Long.MaxValue)) {
-              offsets.remove(tp.partition)
-              latch.countDown()
-              logger.info(s"Initial load: consumed [$topic:${tp.partition}:${position - 1}]")
-              logger.info(s"Initial load completed for [$topic:${tp.partition}], ${latch.getCount} partitions remaining")
-            }
-          }
+        try { super.processPoll(result) } finally {
+          result.partitions().asScala.foreach(checkComplete(consumer, _))
         }
       }
     }
