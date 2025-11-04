@@ -275,7 +275,9 @@ class KafkaDataStore(
 
     WithClose(AdminClient.create(props)) { admin =>
       if (admin.listTopics().names().get.contains(topic)) {
-        admin.deleteTopics(Collections.singletonList(topic)).all().get
+        logger.info(s"Topic [$topic] truncation: starting")
+        KafkaTruncateTopic(admin).truncate(topic)
+        logger.info(s"Topic [$topic] truncation: finished")
       } else {
         logger.warn(s"Topic [$topic] does not exist, can't delete it")
       }
