@@ -161,6 +161,7 @@ object KafkaDataStoreFactory extends GeoMesaDataStoreInfo with LazyLogging {
       KafkaDataStore.ProducerConfig(props)
     }
     val clearOnStart = ClearOnStart.lookup(params)
+    val truncateOnDelete = TruncateOnDelete.lookup(params)
 
     val serialization = SerializationTypes.fromName(SerializationType.lookup(params))
 
@@ -244,7 +245,7 @@ object KafkaDataStoreFactory extends GeoMesaDataStoreInfo with LazyLogging {
       }
     }
 
-    KafkaDataStoreConfig(catalog, brokers, zookeepers, consumers, producers, clearOnStart, topics, serialization,
+    KafkaDataStoreConfig(catalog, brokers, zookeepers, consumers, producers, clearOnStart, truncateOnDelete, topics,
       indices, looseBBox, layerViews, authProvider, audit, metrics, ns)
   }
 
