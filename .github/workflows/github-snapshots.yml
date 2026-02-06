@@ -1,0 +1,47 @@
+name: github-snapshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - '[0-9]+.[0-9]+.x'
+      - 'gh-pkg'
+
+permissions:  # added using https://github.com/step-security/secure-repo
+  contents: read
+  packages: write
+
+env:
+  JAVA_VERSION: 17
+  MAVEN_CLI_OPTS: -Dhttp.keepAlive=false -Dmaven.wagon.http.pool=false --batch-mode
+
+jobs:
+  publish-github-snapshots:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[maven-release-plugin] prepare release')"
+    strategy:
+      fail-fast: false
+      matrix:
+        version: [ "2.12", "2.13" ]
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: "${{ env.JAVA_VERSION }}"
+          server-id: github
+          settings-path: ${{ github.workspace }}
+      - uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+        with:
+          key: ${{ hashFiles('**/pom.xml') }}-github-snapshots-${{ matrix.version }}
+          path: ~/.m2/repository/
+      - name: Set Scala version
+        run: ./build/scripts/change-scala-version.sh ${{ matrix.version }}
+      - name: Build and Publish to GitHub Packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mvn clean deploy -Pgithub -DskipTests -Dmaven.deploy.at.end=false $MAVEN_CLI_OPTS --settings ${{ github.workspace }}/settings.xml
+      - name: Remove geomesa artifacts from cache
+        if: success() || failure()
+        run: rm -rf ~/.m2/repository/org/locationtech/geomesa
