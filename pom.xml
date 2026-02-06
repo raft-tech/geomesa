@@ -51,7 +51,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- java/scala -->
-        <jdk.version>11</jdk.version>
+        <jdk.version>17</jdk.version>
         <scala.version>2.13.11</scala.version> <!-- 2.12.18 is minimum required to support java 21 -->
         <scala.binary.version>2.13</scala.binary.version> <!-- must remain outside of version specific scala profiles for sbt/ivy -->
         <scala.xml.version>2.2.0</scala.xml.version>
