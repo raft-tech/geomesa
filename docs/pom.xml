@@ -3,8 +3,8 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa_2.12</artifactId>
-        <version>5.4.0</version>
+        <artifactId>geomesa_2.13</artifactId>
+        <version>cb-5.4.1-raft</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
