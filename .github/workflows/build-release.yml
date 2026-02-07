@@ -2,6 +2,16 @@ name: build-release
 
 on:
   workflow_dispatch:
+    inputs:
+      modules:
+        description: 'Maven reactor options (e.g., "-pl :geomesa-kafka_2.13 -am" to build kafka and dependencies, or "-rf :module" to resume)'
+        required: false
+        default: ''
+      skip_create_release:
+        description: 'Skip creating GitHub release (use if release already exists)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:  # added using https://github.com/step-security/secure-repo
   contents: read
@@ -16,6 +26,7 @@ env:
 jobs:
   create-github-release:
     name: create-github-release
+    if: ${{ github.event.inputs.skip_create_release != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -37,6 +48,7 @@ jobs:
       contents: write
       packages: write
     needs: create-github-release
+    if: ${{ always() && (needs.create-github-release.result == 'success' || needs.create-github-release.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -61,7 +73,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          mvn $MAVEN_RELEASE_ARGS $MAVEN_CLI_OPTS -DaltDeploymentRepository=local::file:./staging-repo | tee -a build_${{ matrix.scala-version }}.log
+          mvn $MAVEN_RELEASE_ARGS $MAVEN_CLI_OPTS -DaltDeploymentRepository=local::file:./staging-repo ${{ github.event.inputs.modules }} | tee -a build_${{ matrix.scala-version }}.log
       - name: Build (retry)
         if: steps.build.outcome=='failure'
         run: |
@@ -69,7 +81,7 @@ jobs:
           # retry if the failure was due to transient download errors from maven central
           if grep -q -e 'Could not transfer artifact' -e 'Failed to read artifact descriptor' build_${{ matrix.scala-version }}.log; then
             RESUME_FROM="$({ grep --text 'mvn <args> -rf ' build_${{ matrix.scala-version }}.log || test $? = 1; } | tail -n1 | sed 's/.*-rf/-rf/')"
-            mvn $MAVEN_RELEASE_ARGS $MAVEN_CLI_OPTS -DaltDeploymentRepository=local::file:./staging-repo $RESUME_FROM | tee -a build_${{ matrix.scala-version }}.log
+            mvn $MAVEN_RELEASE_ARGS $MAVEN_CLI_OPTS -DaltDeploymentRepository=local::file:./staging-repo ${{ github.event.inputs.modules }} $RESUME_FROM | tee -a build_${{ matrix.scala-version }}.log
           else
             exit 1
           fi
@@ -97,7 +109,7 @@ jobs:
         run: |
           mvn deploy -Pgithub,release -DskipTests -Dmaven.install.skip=true \
             --settings ${{ github.workspace }}/settings.xml \
-            $MAVEN_CLI_OPTS
+            $MAVEN_CLI_OPTS ${{ github.event.inputs.modules }}
       - name: Upload job logs
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
