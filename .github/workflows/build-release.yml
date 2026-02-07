@@ -1,17 +1,46 @@
+# Build and Release GeoMesa Artifacts
+#
+# USE CASE:
+#   Full build and deployment of GeoMesa release artifacts. Compiles the project,
+#   creates a GitHub release, uploads binary distributions, and deploys Maven
+#   artifacts to the selected repository (GitHub Packages and/or Artifactory).
+#
+# PREREQUISITES:
+#   - Must be triggered from a release tag (e.g., geomesa-5.4.1-raft)
+#   - For GitHub Packages: GITHUB_TOKEN (automatic)
+#   - For Artifactory: ARTIFACTORY_USERNAME and ARTIFACTORY_PASSWORD secrets must be configured
+#
+# OUTPUTS:
+#   - GitHub Release with binary tarballs and staging repo archives
+#   - Maven artifacts deployed to selected repository
+#
+# RETRY:
+#   If deployment fails after a successful build, use the 'publish-release' workflow
+#   to retry deployment without rebuilding.
+
 name: build-release
 
 on:
   workflow_dispatch:
     inputs:
       modules:
-        description: 'Maven reactor options (e.g., "-pl :geomesa-kafka_2.13 -am" to build kafka and dependencies, or "-rf :module" to resume)'
+        description: 'Optional Maven reactor options to build specific modules. Examples: "-pl geomesa-kafka/geomesa-kafka-datastore -am" (build kafka-datastore and dependencies), "-rf :geomesa-kafka_2.13" (resume from kafka module). Leave empty to build all modules.'
         required: false
         default: ''
       skip_create_release:
-        description: 'Skip creating GitHub release (use if release already exists)'
+        description: 'Skip creating GitHub release. Use when re-running after a partial failure where the release already exists.'
         type: boolean
         required: false
         default: false
+      deploy_target:
+        description: 'Target Maven repository for artifact deployment. "github" = GitHub Packages, "artifactory" = CBC2 Artifactory, "both" = deploy to both repositories.'
+        type: choice
+        required: true
+        default: 'github'
+        options:
+          - github
+          - artifactory
+          - both
 
 permissions:  # added using https://github.com/step-security/secure-repo
   contents: read
@@ -104,11 +133,32 @@ jobs:
               "${file}" "${file}.sha256"
           done < <(find geomesa-* -name '*-bin.tar.gz' -print0)
       - name: Publish to GitHub Packages
+        if: ${{ github.event.inputs.deploy_target == 'github' || github.event.inputs.deploy_target == 'both' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mvn deploy -Pgithub,release -Dmaven.test.skip -Dmaven.install.skip=true \
             --settings ${{ github.workspace }}/settings.xml \
+            $MAVEN_CLI_OPTS ${{ github.event.inputs.modules }}
+      - name: Create Artifactory settings.xml
+        if: ${{ github.event.inputs.deploy_target == 'artifactory' || github.event.inputs.deploy_target == 'both' }}
+        run: |
+          cat > ${{ github.workspace }}/settings-artifactory.xml << 'EOF'
+          <settings>
+            <servers>
+              <server>
+                <id>artifactory</id>
+                <username>${{ secrets.ARTIFACTORY_USERNAME }}</username>
+                <password>${{ secrets.ARTIFACTORY_PASSWORD }}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+      - name: Publish to Artifactory
+        if: ${{ github.event.inputs.deploy_target == 'artifactory' || github.event.inputs.deploy_target == 'both' }}
+        run: |
+          mvn deploy -Partifactory,release -Dmaven.test.skip -Dmaven.install.skip=true \
+            --settings ${{ github.workspace }}/settings-artifactory.xml \
             $MAVEN_CLI_OPTS ${{ github.event.inputs.modules }}
       - name: Upload job logs
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

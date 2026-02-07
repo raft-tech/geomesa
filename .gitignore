@@ -29,3 +29,6 @@ geomesa-*.*.*-*
 .vscode/settings.json
 venv/**
 metastore_db/**
+
+#claude
+.claude/

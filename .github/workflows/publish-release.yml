@@ -1,0 +1,149 @@
+# Publish Pre-Built Release Artifacts
+#
+# USE CASE:
+#   Deploy pre-built artifacts from a previous 'build-release' run to a Maven repository.
+#   Use this workflow to retry a failed deployment without rebuilding the entire project.
+#
+# PREREQUISITES:
+#   - A successful 'build-release' run must exist for the specified tag
+#   - The staging tarball (e.g., geomesa-5.4.1-raft_2.13-staging.tgz) must be
+#     attached to the GitHub release
+#   - For GitHub Packages: GITHUB_TOKEN (automatic)
+#   - For Artifactory: ARTIFACTORY_USERNAME and ARTIFACTORY_PASSWORD secrets must be configured
+#
+# WHEN TO USE:
+#   - Deployment to one repository succeeded but another failed (e.g., credential issues)
+#   - Need to publish to an additional repository after initial release
+#   - Retrying after transient network failures during deployment
+
+name: publish-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The release tag containing the staging artifacts (e.g., geomesa-5.4.1-raft). Must match an existing GitHub release with staging tarballs attached.'
+        required: true
+      scala_version:
+        description: 'Scala version to publish. Artifacts are built separately for each Scala version. Select the version that needs to be (re)published.'
+        type: choice
+        required: true
+        options:
+          - '2.12'
+          - '2.13'
+      deploy_target:
+        description: 'Target Maven repository. "github" = GitHub Packages, "artifactory" = CBC2 Artifactory (https://artifact-cbc2.cce.af.mil/artifactory/cbc2-maven-incoming).'
+        type: choice
+        required: true
+        options:
+          - github
+          - artifactory
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  JAVA_VERSION: 17
+  MAVEN_CLI_OPTS: -Dhttp.keepAlive=false -Dmaven.wagon.http.pool=false --batch-mode
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  publish:
+    name: publish / ${{ github.event.inputs.scala_version }} / ${{ github.event.inputs.deploy_target }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.inputs.tag }}
+      - uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: "${{ env.JAVA_VERSION }}"
+      - name: Download staging artifacts
+        run: |
+          mkdir -p staging-repo
+          gh release download "${{ github.event.inputs.tag }}" \
+            --repo ${GITHUB_REPOSITORY} \
+            --pattern "${{ github.event.inputs.tag }}_${{ github.event.inputs.scala_version }}-staging.tgz"
+          tar -xzf "${{ github.event.inputs.tag }}_${{ github.event.inputs.scala_version }}-staging.tgz" -C staging-repo
+      - name: Set Scala version
+        run: ./build/scripts/change-scala-version.sh ${{ github.event.inputs.scala_version }}
+      - name: Create GitHub settings.xml
+        if: ${{ github.event.inputs.deploy_target == 'github' }}
+        run: |
+          cat > settings.xml << EOF
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>\${env.GITHUB_ACTOR}</username>
+                <password>\${env.GITHUB_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+      - name: Create Artifactory settings.xml
+        if: ${{ github.event.inputs.deploy_target == 'artifactory' }}
+        run: |
+          cat > settings.xml << EOF
+          <settings>
+            <servers>
+              <server>
+                <id>artifactory</id>
+                <username>${{ secrets.ARTIFACTORY_USERNAME }}</username>
+                <password>${{ secrets.ARTIFACTORY_PASSWORD }}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+      - name: Deploy from staging repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Deploy each artifact from the staging repo
+          find staging-repo -name "*.pom" | while read pom; do
+            dir=$(dirname "$pom")
+            artifactId=$(basename "$dir")
+            version=$(basename "$(dirname "$dir")")
+            groupPath=$(dirname "$(dirname "$dir")")
+            groupId=$(echo "$groupPath" | sed 's|staging-repo/||' | tr '/' '.')
+
+            # Find the main artifact (jar, if exists)
+            jar="${pom%.pom}.jar"
+            sources="${pom%.pom}-sources.jar"
+            javadoc="${pom%.pom}-javadoc.jar"
+
+            # Determine repository URL based on target
+            if [ "${{ github.event.inputs.deploy_target }}" == "github" ]; then
+              REPO_URL="https://maven.pkg.github.com/${GITHUB_REPOSITORY}"
+              REPO_ID="github"
+            else
+              REPO_URL="https://artifact-cbc2.cce.af.mil/artifactory/cbc2-maven-incoming"
+              REPO_ID="artifactory"
+            fi
+
+            # Build deploy command
+            if [ -f "$jar" ]; then
+              mvn deploy:deploy-file \
+                -DpomFile="$pom" \
+                -Dfile="$jar" \
+                -DrepositoryId="$REPO_ID" \
+                -Durl="$REPO_URL" \
+                --settings settings.xml \
+                $MAVEN_CLI_OPTS || echo "Warning: Failed to deploy $artifactId"
+            else
+              # POM-only artifact
+              mvn deploy:deploy-file \
+                -DpomFile="$pom" \
+                -Dfile="$pom" \
+                -Dpackaging=pom \
+                -DrepositoryId="$REPO_ID" \
+                -Durl="$REPO_URL" \
+                --settings settings.xml \
+                $MAVEN_CLI_OPTS || echo "Warning: Failed to deploy $artifactId"
+            fi
+          done

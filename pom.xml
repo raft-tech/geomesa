@@ -374,6 +374,23 @@
         </profile>
 
         <profile>
+            <!-- for publishing to CBC2 Artifactory -->
+            <id>artifactory</id>
+            <distributionManagement>
+                <repository>
+                    <id>artifactory</id>
+                    <name>CBC2 Artifactory</name>
+                    <url>https://artifact-cbc2.cce.af.mil/artifactory/cbc2-maven-incoming</url>
+                </repository>
+                <snapshotRepository>
+                    <id>artifactory</id>
+                    <name>CBC2 Artifactory</name>
+                    <url>https://artifact-cbc2.cce.af.mil/artifactory/cbc2-maven-incoming</url>
+                </snapshotRepository>
+            </distributionManagement>
+        </profile>
+
+        <profile>
             <!-- for publishing to maven central -->
             <id>central</id>
             <properties>

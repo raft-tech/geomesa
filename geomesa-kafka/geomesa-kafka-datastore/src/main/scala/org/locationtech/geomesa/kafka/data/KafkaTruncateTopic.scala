@@ -16,7 +16,7 @@ import org.apache.kafka.common.config.{ConfigResource, TopicConfig}
 
 import java.util
 import java.util.Collections
-import scala.jdk.CollectionConverters.{IterableHasAsScala, MapHasAsJava, MapHasAsScala}
+import scala.collection.JavaConverters._
 
 class KafkaTruncateTopic(private val admin: Admin) extends LazyLogging {
 
