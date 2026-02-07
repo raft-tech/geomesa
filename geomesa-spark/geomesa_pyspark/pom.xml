@@ -63,6 +63,21 @@
                             <failIfNoMatch>false</failIfNoMatch>
                         </configuration>
                     </execution>
+                    <execution>
+                        <!-- handle custom cb-X.Y.Z-raft version format -->
+                        <id>regex-property-custom</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>regex-property</goal>
+                        </goals>
+                        <configuration>
+                            <name>python.version</name>
+                            <value>${python.version}</value>
+                            <regex>cb-(\d+\.\d+\.\d+)-raft</regex>
+                            <replacement>$1.dev0+cbraft</replacement>
+                            <failIfNoMatch>false</failIfNoMatch>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>
