@@ -107,7 +107,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mvn deploy -Pgithub,release -DskipTests -Dmaven.install.skip=true \
+          mvn deploy -Pgithub,release -Dmaven.test.skip -Dmaven.install.skip=true \
             --settings ${{ github.workspace }}/settings.xml \
             $MAVEN_CLI_OPTS ${{ github.event.inputs.modules }}
       - name: Upload job logs
