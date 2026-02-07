@@ -39,11 +39,19 @@ mvn failsafe:integration-test -pl <module>
 ## Project Architecture
 
 ### Core Modules
-- **geomesa-index-api**: Indexing abstraction layer - defines how features are indexed and queried
-- **geomesa-filter**: CQL filter parsing and spatial predicates
-- **geomesa-features**: Feature encoding (Avro, Kryo serialization)
-- **geomesa-z3**: Z3 space-filling curve implementation for spatio-temporal indexing
-- **geomesa-utils-parent**: Common utilities and base functionality
+- **geomesa-index-api**: Indexing abstraction layer - defines how features are indexed and queried. Contains `GeoMesaDataStore` base class that all data stores extend.
+- **geomesa-filter**: CQL filter parsing, DNF/CNF normalization, and spatial predicates
+- **geomesa-features**: Feature encoding (Avro, Kryo serialization) and exporters
+- **geomesa-z3**: Space-filling curve implementations (Z2, Z3, XZ2, XZ3, S2, S3) for spatio-temporal indexing
+- **geomesa-utils-parent**: Common utilities, configuration, and BOM (Bill of Materials)
+
+### Index Types
+GeoMesa provides pluggable spatial/temporal indices (defined in `geomesa-index-api`):
+- **Z3Index / XZ3Index**: Spatio-temporal (longitude, latitude, time) - use for time-series geo data
+- **Z2Index / XZ2Index**: Spatial only (longitude, latitude) - use for static geo data
+- **S2Index / S3Index**: Google S2-based spatial/spatio-temporal indexing
+- **IdIndex**: Fast lookup by feature ID
+- **AttributeIndex**: Secondary index on feature attributes
 
 ### Data Store Implementations
 Each data store follows a similar structure with sub-modules:
@@ -61,9 +69,10 @@ Data stores: `geomesa-accumulo`, `geomesa-hbase`, `geomesa-cassandra`, `geomesa-
 - **geomesa-process**: WPS processes for GeoServer
 
 ### Key Concepts
-- **SimpleFeatureType (SFT)**: GeoTools schema definition for geospatial features
-- **Z3 Index**: 3D space-filling curve encoding longitude, latitude, and time into a single sortable key
+- **SimpleFeatureType (SFT)**: GeoTools schema definition for geospatial features (e.g., `"name:String,dtg:Date,*geom:Point:srid=4326"`)
+- **Space-filling curves**: Z3/Z2 encode multi-dimensional coordinates into single sortable keys for efficient range queries
 - **Iterators**: Server-side processing for Accumulo/HBase that push filtering to storage layer
+- **Query Planning**: `FilterSplitter` and `QueryPlanner` in `geomesa-index-api` select optimal indices and strategies
 
 ## Testing
 
@@ -77,10 +86,11 @@ Data stores: `geomesa-accumulo`, `geomesa-hbase`, `geomesa-cassandra`, `geomesa-
 - Scala code follows the [Scala style guide](https://docs.scala-lang.org/style/)
 - License headers required on all source files (enforced by License Maven Plugin)
 - PR titles: `GEOMESA-XXXX: Description` (reference JIRA ticket)
+- Contributions require Eclipse CLA signature
 
 ## Key Dependencies
 
-- GeoTools 34.1 (geospatial operations)
+- GeoTools 34.1 (geospatial operations, DataStore interface)
 - JTS 1.20.0 (geometry operations)
 - Apache Spark 3.5.7
 - Scala 2.12.20 (also supports 2.13.16)
